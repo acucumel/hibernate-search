@@ -42,6 +42,7 @@ class ElasticsearchLinkImpl implements ElasticsearchLink {
 	private final boolean logPrettyPrinting;
 	private final ElasticsearchDialectFactory dialectFactory;
 	private final Optional<ElasticsearchVersion> configuredVersionOptional;
+	private final boolean versionCheckEnabled;
 
 	private ElasticsearchClientImplementor clientImplementor;
 	private ElasticsearchVersion elasticsearchVersion;
@@ -54,13 +55,15 @@ class ElasticsearchLinkImpl implements ElasticsearchLink {
 	ElasticsearchLinkImpl(BeanHolder<? extends ElasticsearchClientFactory> clientFactoryHolder,
 			ThreadPoolProvider threadPoolProvider, GsonProvider defaultGsonProvider, boolean logPrettyPrinting,
 			ElasticsearchDialectFactory dialectFactory,
-			Optional<ElasticsearchVersion> configuredVersionOptional) {
+			Optional<ElasticsearchVersion> configuredVersionOptional,
+			boolean versionCheckEnabled) {
 		this.clientFactoryHolder = clientFactoryHolder;
 		this.threadPoolProvider = threadPoolProvider;
 		this.defaultGsonProvider = defaultGsonProvider;
 		this.logPrettyPrinting = logPrettyPrinting;
 		this.dialectFactory = dialectFactory;
 		this.configuredVersionOptional = configuredVersionOptional;
+		this.versionCheckEnabled = versionCheckEnabled;
 	}
 
 	@Override
@@ -111,12 +114,26 @@ class ElasticsearchLinkImpl implements ElasticsearchLink {
 			);
 			clientFactoryHolder.close(); // We won't need it anymore
 
-			elasticsearchVersion = ElasticsearchClientUtils.getElasticsearchVersion( clientImplementor );
-			if ( configuredVersionOptional.isPresent() ) {
-				ElasticsearchVersion configuredVersion = configuredVersionOptional.get();
-				if ( !configuredVersion.matches( elasticsearchVersion ) ) {
-					throw log.unexpectedElasticsearchVersion( configuredVersion, elasticsearchVersion );
+			if ( versionCheckEnabled ) {
+				elasticsearchVersion = ElasticsearchClientUtils.getElasticsearchVersion( clientImplementor );
+				if ( configuredVersionOptional.isPresent() ) {
+					ElasticsearchVersion configuredVersion = configuredVersionOptional.get();
+					if ( !configuredVersion.matches( elasticsearchVersion ) ) {
+						throw log.unexpectedElasticsearchVersion( configuredVersion, elasticsearchVersion );
+					}
 				}
+			}
+			else if ( configuredVersionOptional.isPresent() ) {
+				ElasticsearchVersion configuredVersion = configuredVersionOptional.get();
+				if ( configuredVersion.getMinor().isPresent() && configuredVersion.getMicro().isPresent() ) {
+					elasticsearchVersion = configuredVersion;
+				}
+				else {
+					throw log.invalidElasticsearchVersionCheckConfiguration( configuredVersion.toString() );
+				}
+			}
+			else {
+				throw log.invalidElasticsearchVersionCheckConfiguration( null );
 			}
 
 			ElasticsearchProtocolDialect protocolDialect = dialectFactory.createProtocolDialect( elasticsearchVersion );
